@@ -44,5 +44,5 @@ SearcherMapping: dict[str, Callable] = {
     "hyperband_custom_default": HyperbandCustomDefault,
     "priorband": PriorBand,
     "mobster": MOBSTER,
-    "mf_ei_bo": MFEIBO,
+    "ifbo_ei": MFEIBO,
 }
