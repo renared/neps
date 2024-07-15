@@ -48,7 +48,7 @@ packages = [{ include = "neps" }, { include = "neps_examples" }]
 
 
 [tool.poetry.dependencies]
-python = ">=3.8,<3.12"
+python = ">=3.10,<3.12"
 ConfigSpace = "^0.7"
 grakel = "^0.1"
 numpy = "^1"
