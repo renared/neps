@@ -45,4 +45,5 @@ SearcherMapping: dict[str, Callable] = {
     "priorband": PriorBand,
     "mobster": MOBSTER,
     "ifbo_ei": MFEIBO,
+    "ifbo": partial(MFEIBO, acquisition="MFPI-random"),
 }

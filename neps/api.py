@@ -337,15 +337,14 @@ def _run_args(
     except TypeError as e:
         message = f"The pipeline_space has invalid type: {type(pipeline_space)}"
         raise TypeError(message) from e
-
+    
     # Load the information of the optimizer
     if isinstance(searcher, (str, Path)) and searcher not in \
         SearcherConfigs.get_searchers() and searcher != "default":
         # The users have their own custom searcher provided via yaml.
         logging.info("Preparing to run user created searcher")
 
-        searcher_config, file_name = get_searcher_data(searcher,
-                                                      loading_custom_searcher=True)
+        searcher_config, file_name = get_searcher_data(searcher, loading_custom_searcher=True)
         # name defined via key or the filename of the yaml
         searcher_name = searcher_config.pop("name", file_name)
         searcher_info["searcher_selection"] = "user-yaml"
