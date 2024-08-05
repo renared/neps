@@ -1,5 +1,5 @@
-"""API for the neps package.
-"""
+"""API for the neps package."""
+
 from __future__ import annotations
 
 import inspect
@@ -9,12 +9,10 @@ from pathlib import Path
 from typing import Callable, Iterable, Literal
 
 import ConfigSpace as CS
-from neps.utils.run_args import check_essential_arguments, \
-    get_run_args_from_yaml, \
-    check_double_reference
+from neps.utils.run_args import Settings, Default
 
 from neps.utils.common import instance_from_map
-from neps.runtime import launch_runtime
+from neps.runtime import _launch_runtime
 from neps.optimizers import BaseOptimizer, SearcherMapping
 from neps.search_spaces.parameter import Parameter
 from neps.search_spaces.search_space import (
@@ -26,30 +24,32 @@ from neps.status.status import post_run_csv
 from neps.utils.common import get_searcher_data, get_value
 from neps.optimizers.info import SearcherConfigs
 
+logger = logging.getLogger(__name__)
+
 
 def run(
-    run_pipeline: Callable | None = None,
-    root_directory: str | Path | None = None,
+    run_pipeline: Callable | None = Default(None),
+    root_directory: str | Path | None = Default(None),
     pipeline_space: (
         dict[str, Parameter | CS.ConfigurationSpace]
         | str
         | Path
         | CS.ConfigurationSpace
         | None
-    ) = None,
-    run_args: str | Path | None = None,
-    overwrite_working_directory: bool = False,
-    post_run_summary: bool = True,
-    development_stage_id=None,
-    task_id=None,
-    max_evaluations_total: int | None = None,
-    max_evaluations_per_run: int | None = None,
-    continue_until_max_evaluation_completed: bool = False,
-    max_cost_total: int | float | None = None,
-    ignore_errors: bool = False,
-    loss_value_on_error: None | float = None,
-    cost_value_on_error: None | float = None,
-    pre_load_hooks: Iterable | None = None,
+    ) = Default(None),
+    run_args: str | Path | None = Default(None),
+    overwrite_working_directory: bool = Default(False),
+    post_run_summary: bool = Default(True),
+    development_stage_id=Default(None),
+    task_id=Default(None),
+    max_evaluations_total: int | None = Default(None),
+    max_evaluations_per_run: int | None = Default(None),
+    continue_until_max_evaluation_completed: bool = Default(False),
+    max_cost_total: int | float | None = Default(None),
+    ignore_errors: bool = Default(False),
+    loss_value_on_error: None | float = Default(None),
+    cost_value_on_error: None | float = Default(None),
+    pre_load_hooks: Iterable | None = Default(None),
     searcher: (
         Literal[
             "default",
@@ -61,8 +61,9 @@ def run(
             "asha",
             "regularized_evolution",
         ]
-        | BaseOptimizer | Path
-    ) = "default",
+        | BaseOptimizer
+        | Path
+    ) = Default("default"),
     **searcher_kwargs,
 ) -> None:
     """Run a neural pipeline search.
@@ -146,54 +147,15 @@ def run(
         )
         max_cost_total = searcher_kwargs["budget"]
         del searcher_kwargs["budget"]
-    logger = logging.getLogger("neps")
 
-    if run_args:
-        optim_settings = get_run_args_from_yaml(run_args)
-        check_double_reference(run, locals(), optim_settings)
-        run_pipeline = optim_settings.get("run_pipeline", run_pipeline)
-        root_directory = optim_settings.get("root_directory", root_directory)
-        pipeline_space = optim_settings.get("pipeline_space", pipeline_space)
-        overwrite_working_directory = optim_settings.get(
-            "overwrite_working_directory", overwrite_working_directory
-        )
-        post_run_summary = optim_settings.get("post_run_summary", post_run_summary)
-        development_stage_id = optim_settings.get("development_stage_id",
-                                                  development_stage_id)
-        task_id = optim_settings.get("task_id", task_id)
-        max_evaluations_total = optim_settings.get("max_evaluations_total",
-                                                   max_evaluations_total)
-        max_evaluations_per_run = optim_settings.get("max_evaluations_per_run",
-                                                     max_evaluations_per_run)
-        continue_until_max_evaluation_completed = optim_settings.get(
-            "continue_until_max_evaluation_completed",
-            continue_until_max_evaluation_completed)
-        max_cost_total = optim_settings.get("max_cost_total", max_cost_total)
-        ignore_errors = optim_settings.get("ignore_errors", ignore_errors)
-        loss_value_on_error = optim_settings.get("loss_value_on_error",
-                                                 loss_value_on_error)
-        cost_value_on_error = optim_settings.get("cost_value_on_error",
-                                                 cost_value_on_error)
-        pre_load_hooks = optim_settings.get("pre_load_hooks", pre_load_hooks)
-        searcher = optim_settings.get("searcher", searcher)
-        # considers arguments of a provided SubClass of BaseOptimizer
-        searcher_class_arguments = optim_settings.get("custom_class_searcher_kwargs", {})
+    settings = Settings(locals(), run_args)
+    # TODO: check_essentials,
 
-    # check if necessary arguments are provided.
-    check_essential_arguments(
-        run_pipeline,
-        root_directory,
-        pipeline_space,
-        max_cost_total,
-        max_evaluations_total,
-        searcher,
-        run_args,
-    )
+    # DO NOT use any neps arguments directly; instead, access them via the Settings class.
+    if settings.pre_load_hooks is None:
+        settings.pre_load_hooks = []
 
-    if pre_load_hooks is None:
-        pre_load_hooks = []
-
-    logger.info(f"Starting neps.run using root directory {root_directory}")
+    logger.info(f"Starting neps.run using root directory {settings.root_directory}")
 
     # Used to create the yaml holding information about the searcher.
     # Also important for testing and debugging the api.
@@ -206,24 +168,27 @@ def run(
     }
 
     # special case if you load your own optimizer via run_args
-    if inspect.isclass(searcher):
-        if issubclass(searcher, BaseOptimizer):
-            search_space = SearchSpace(**pipeline_space)
+    if inspect.isclass(settings.searcher):
+        if issubclass(settings.searcher, BaseOptimizer):
+            search_space = SearchSpace(**settings.pipeline_space)
             # aligns with the behavior of the internal neps searcher which also overwrites
             # its arguments by using searcher_kwargs
-            merge_kwargs = {**searcher_class_arguments, **searcher_kwargs}
-            searcher_info["searcher_args"] = merge_kwargs
-            searcher = searcher(search_space, **merge_kwargs)
+            # TODO habe hier searcher kwargs gedroppt, sprich das merging muss davor statt
+            # finden
+            searcher_info["searcher_args"] = settings.searcher_kwargs
+            settings.searcher = settings.searcher(
+                search_space, **settings.searcher_kwargs
+            )
         else:
             # Raise an error if searcher is not a subclass of BaseOptimizer
             raise TypeError(
                 "The provided searcher must be a class that inherits from BaseOptimizer."
             )
 
-    if isinstance(searcher, BaseOptimizer):
-        searcher_instance = searcher
+    if isinstance(settings.searcher, BaseOptimizer):
+        searcher_instance = settings.searcher
         searcher_info["searcher_name"] = "baseoptimizer"
-        searcher_info["searcher_alg"] = searcher.whoami()
+        searcher_info["searcher_alg"] = settings.searcher.whoami()
         searcher_info["searcher_selection"] = "user-instantiation"
         searcher_info["neps_decision_tree"] = False
     else:
@@ -232,52 +197,57 @@ def run(
             searcher_info,
         ) = _run_args(
             searcher_info=searcher_info,
-            pipeline_space=pipeline_space,
-            max_cost_total=max_cost_total,
-            ignore_errors=ignore_errors,
-            loss_value_on_error=loss_value_on_error,
-            cost_value_on_error=cost_value_on_error,
-            logger=logger,
-            searcher=searcher,
-            **searcher_kwargs,
+            pipeline_space=settings.pipeline_space,
+            max_cost_total=settings.max_cost_total,
+            ignore_errors=settings.ignore_errors,
+            loss_value_on_error=settings.loss_value_on_error,
+            cost_value_on_error=settings.cost_value_on_error,
+            searcher=settings.searcher,
+            **settings.searcher_kwargs,
         )
 
     # Check to verify if the target directory contains history of another optimizer state
     # This check is performed only when the `searcher` is built during the run
-    if not isinstance(searcher, (BaseOptimizer, str, dict, Path)):
+    if not isinstance(settings.searcher, (BaseOptimizer, str, dict, Path)):
         raise ValueError(
-            f"Unrecognized `searcher` of type {type(searcher)}. Not str or BaseOptimizer."
+            f"Unrecognized `searcher` of type {type(settings.searcher)}. Not str or "
+            f"BaseOptimizer."
         )
-    elif isinstance(searcher, BaseOptimizer):
+    elif isinstance(settings.searcher, BaseOptimizer):
         # This check is not strict when a user-defined neps.optimizer is provided
         logger.warning(
             "An instantiated optimizer is provided. The safety checks of NePS will be "
             "skipped. Accurate continuation of runs can no longer be guaranteed!"
         )
 
-    if task_id is not None:
-        root_directory = Path(root_directory) / f"task_{task_id}"
-    if development_stage_id is not None:
-        root_directory = Path(root_directory) / f"dev_{development_stage_id}"
+    if settings.task_id is not None:
+        settings.root_directory = Path(settings.root_directory) / (
+            f"task_" f"{settings.task_id}"
+        )
+    if settings.development_stage_id is not None:
+        settings.root_directory = (
+            Path(settings.root_directory) / f"dev_{settings.development_stage_id}"
+        )
 
-    launch_runtime(
-        evaluation_fn=run_pipeline,
-        sampler=searcher_instance,
+    _launch_runtime(
+        evaluation_fn=settings.run_pipeline,
+        optimizer=searcher_instance,
         optimizer_info=searcher_info,
-        optimization_dir=root_directory,
-        max_evaluations_total=max_evaluations_total,
-        max_evaluations_per_run=max_evaluations_per_run,
-        continue_until_max_evaluation_completed=continue_until_max_evaluation_completed,
-        logger=logger,
-        loss_value_on_error=loss_value_on_error,
-        ignore_errors=ignore_errors,
-        overwrite_optimization_dir=overwrite_working_directory,
-        pre_load_hooks=pre_load_hooks,
+        max_cost_total=settings.max_cost_total,
+        optimization_dir=Path(settings.root_directory),
+        max_evaluations_total=settings.max_evaluations_total,
+        max_evaluations_for_worker=settings.max_evaluations_per_run,
+        continue_until_max_evaluation_completed=settings.continue_until_max_evaluation_completed,
+        loss_value_on_error=settings.loss_value_on_error,
+        cost_value_on_error=settings.cost_value_on_error,
+        ignore_errors=settings.ignore_errors,
+        overwrite_optimization_dir=settings.overwrite_working_directory,
+        pre_load_hooks=settings.pre_load_hooks,
     )
 
-    if post_run_summary:
-        assert root_directory is not None
-        post_run_csv(root_directory)
+    if settings.post_run_summary:
+        assert settings.root_directory is not None
+        post_run_csv(settings.root_directory)
 
 
 def _run_args(
@@ -293,7 +263,6 @@ def _run_args(
     ignore_errors: bool = False,
     loss_value_on_error: None | float = None,
     cost_value_on_error: None | float = None,
-    logger=None,
     searcher: (
         Literal[
             "default",
@@ -339,12 +308,17 @@ def _run_args(
         raise TypeError(message) from e
     
     # Load the information of the optimizer
-    if isinstance(searcher, (str, Path)) and searcher not in \
-        SearcherConfigs.get_searchers() and searcher != "default":
+    if (
+        isinstance(searcher, (str, Path))
+        and searcher not in SearcherConfigs.get_searchers()
+        and searcher != "default"
+    ):
         # The users have their own custom searcher provided via yaml.
         logging.info("Preparing to run user created searcher")
 
-        searcher_config, file_name = get_searcher_data(searcher, loading_custom_searcher=True)
+        searcher_config, file_name = get_searcher_data(
+            searcher, loading_custom_searcher=True
+        )
         # name defined via key or the filename of the yaml
         searcher_name = searcher_config.pop("name", file_name)
         searcher_info["searcher_selection"] = "user-yaml"
@@ -383,20 +357,18 @@ def _run_args(
         warnings.warn(
             "The 'algorithm' argument is deprecated and will be removed in "
             "future versions. Please use 'strategy' instead.",
-            DeprecationWarning
+            DeprecationWarning,
         )
         # Map the old 'algorithm' argument to 'strategy'
-        searcher_config['strategy'] = searcher_config.pop("algorithm")
+        searcher_config["strategy"] = searcher_config.pop("algorithm")
 
     if "strategy" in searcher_config:
         searcher_alg = searcher_config.pop("strategy")
     else:
         raise KeyError(f"Missing key strategy in searcher config:{searcher_config}")
 
-
     logger.info(f"Running {searcher_name} as the searcher")
     logger.info(f"Strategy: {searcher_alg}")
-
 
     # Used to create the yaml holding information about the searcher.
     # Also important for testing and debugging the api.
