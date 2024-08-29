@@ -464,34 +464,16 @@ class IFBO(BaseOptimizer):
             # NOTE: `samples` and `_samples` should share the same index values, hence,
             # avoid using `.iloc` and work with `.loc` on these pandas DataFrame/Series
 
-            if hasattr(self.acquisition, "mu"):
-                # collect prediction learning_curves
-                lcs = []
-                # and tabular ids
-                tabular_ids = []
-                for idx in _samples.index:
-                    if self.acquisition_sampler.is_tabular:
-                        tabular_ids.append(samples[idx]["id"].value)
-                    if idx in self.observed_configs.df.index.levels[0]:
-                        # extracting the available/observed learning curve
-                        lc = self.observed_configs.extract_learning_curve(idx, budget_id=None)
-                    else:
-                        # initialize a learning curve with a placeholder
-                        # This is later padded accordingly for the Conv1D layer
-                        lc = []
-                    lcs.append(lc)
-
             # assigning config hyperparameters
             config = samples.loc[_config_id]
             # IMPORTANT: setting the fidelity value appropriately
-
             _fid_value = (
                 config.fidelity.lower
                 if best_idx > max(self.observed_configs.seen_config_ids)
                 else (
                     self.get_budget_value(
                         self.observed_configs.get_max_observed_fidelity_level_per_config().loc[best_idx]
-                     ) + self.step_size  # ONE-STEP FIDELITY QUERY
+                     ) + self.step_size  # ONE-STEP FIDELITY QUERY for freeze-thaw
                 )
             )
             config.update_hp_values({config.fidelity_name: _fid_value})
