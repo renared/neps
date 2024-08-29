@@ -12,19 +12,21 @@ from neps.optimizers.multi_fidelity.utils import MFObservedData
 from neps.optimizers.bayesian_optimization.acquisition_samplers.base_acq_sampler import AcquisitionSampler
 
 
+SAMPLES_TO_DRAW = 100  # number of random samples to draw for optimizing acquisition function
+
+
 class FreezeThawSampler(AcquisitionSampler):
 
-    SAMPLES_TO_DRAW = 100  # number of random samples to draw at lowest fidelity
-
-    def __init__(self, **kwargs):
+    def __init__(self, samples_to_draw: int = None, **kwargs):
         super().__init__(**kwargs)
         self.observations = None
         self.b_step = None
         self.n = None
         self.pipeline_space = None
         # args to manage tabular spaces/grid
-        self.is_tabular = False
+        self.is_tabular = False  # flag is set by `set_state()`
         self.sample_full_table = None
+        self.samples_to_draw = samples_to_draw if samples_to_draw is not None else SAMPLES_TO_DRAW
         self.set_sample_full_tabular(True)  # sets flag that samples full table
 
     def set_sample_full_tabular(self, flag: bool=False):
@@ -34,7 +36,7 @@ class FreezeThawSampler(AcquisitionSampler):
     def _sample_new(
         self, index_from: int, n: int = None, ignore_fidelity: bool = False
     ) -> pd.Series:
-        n = n if n is not None else self.SAMPLES_TO_DRAW
+        n = n if n is not None else self.samples_to_draw
         new_configs = [
             self.pipeline_space.sample(
                 patience=self.patience, user_priors=False, ignore_fidelity=ignore_fidelity
@@ -53,10 +55,10 @@ class FreezeThawSampler(AcquisitionSampler):
         patience: int = 10,
         ignore_fidelity: bool = False,
     ) -> pd.Series:
-        n = n if n is not None else self.SAMPLES_TO_DRAW
+        n = n if n is not None else self.samples_to_draw
         assert (
             patience > 0 and n > 0
-        ), "Patience and SAMPLES_TO_DRAW must be larger than 0"
+        ), "Patience and `samples_to_draw` must be larger than 0"
 
         existing_configs = self.observations.all_configs_list()
         new_configs = []
@@ -108,7 +110,7 @@ class FreezeThawSampler(AcquisitionSampler):
         """Samples a new set and returns the total set of observed + new configs."""
         partial_configs = self.observations.get_partial_configs_at_max_seen()
 
-        _n = n if n is not None else self.SAMPLES_TO_DRAW
+        _n = n if n is not None else self.samples_to_draw
         if self.is_tabular:
             # handles tabular data such that the entire unseen set of configs from the
             # table is considered to be the new set of candidates
@@ -168,7 +170,7 @@ class FreezeThawSampler(AcquisitionSampler):
         self.pipeline_space = pipeline_space
         self.observations = observations
         self.b_step = b_step
-        self.n = n if n is not None else self.SAMPLES_TO_DRAW
+        self.n = n if n is not None else self.samples_to_draw
         if (
             hasattr(self.pipeline_space, "custom_grid_table")
             and self.pipeline_space.custom_grid_table is not None

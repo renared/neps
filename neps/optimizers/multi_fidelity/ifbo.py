@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from neps.state.optimizer import BudgetInfo
-from neps.utils.types import ConfigResult, RawConfig
+from neps.utils.types import ConfigResult
 from neps.utils.common import instance_from_map, EvaluationData
 from neps.search_spaces.search_space import FloatParameter, IntegerParameter, SearchSpace
 from neps.optimizers.base_optimizer import BaseOptimizer
@@ -26,10 +26,10 @@ from neps.optimizers.multi_fidelity.mf_bo import FreezeThawModel, PFNSurrogate
 from neps.optimizers.multi_fidelity.utils import MFObservedData
 
 
-class MFEIBO(BaseOptimizer):
+class IFBO(BaseOptimizer):
     """Base class for MF-BO algorithms that use DyHPO-like acquisition and budgeting."""
 
-    acquisition: str = "MFEI"
+    acquisition: str = "MFPI-random"
 
     def __init__(
         self,
@@ -46,7 +46,7 @@ class MFEIBO(BaseOptimizer):
         ignore_errors: bool = False,
         logger=None,
         # arguments for model
-        surrogate_model: str | Any = "gp",
+        surrogate_model: str | Any = "ftpfn",
         surrogate_model_args: dict = None,
         domain_se_kernel: str = None,
         graph_kernels: list = None,
@@ -55,7 +55,7 @@ class MFEIBO(BaseOptimizer):
         acquisition_args: dict = None,
         acquisition_sampler: str | AcquisitionSampler = "freeze-thaw",
         acquisition_sampler_args: dict = None,
-        model_policy: Any = FreezeThawModel,
+        model_policy: Any = PFNSurrogate,
         initial_design_fraction: float = 0.75,
         initial_design_size: int = 10,
         initial_design_budget: int = None,
@@ -127,9 +127,7 @@ class MFEIBO(BaseOptimizer):
         self._prep_model_args(self.hp_kernels, self.graph_kernels, pipeline_space)
 
         # TODO: Better solution than branching based on the surrogate name is needed
-        if surrogate_model in ["deep_gp", "dpl"]:
-            raise NotImplementedError
-        elif surrogate_model == "gp":
+        if surrogate_model in ["gp", "gp_hierarchy"]:
             model_policy = FreezeThawModel
         elif surrogate_model == "ftpfn":
             model_policy = PFNSurrogate
@@ -230,6 +228,8 @@ class MFEIBO(BaseOptimizer):
         return _initial_design_size, _initial_design_budget
 
     def get_budget_level(self, config: SearchSpace) -> int:
+        """Calculates the discretized (int) budget level for a given configuration.
+        """
         return int(
             np.ceil((config.fidelity.value - config.fidelity.lower) / self.step_size)
         )
@@ -254,7 +254,7 @@ class MFEIBO(BaseOptimizer):
         return budget_val
 
     def total_budget_spent(self) -> int | float:
-        """Calculates the toal budget spent so far.
+        """Calculates the toal budget spent so far, in the unit of fidelity specified.
 
         This is calculated as a function of the fidelity range provided, that takes into
         account the minimum budget and the step size.
@@ -333,7 +333,7 @@ class MFEIBO(BaseOptimizer):
 
     def _load_previous_observations(self, previous_results):
         def index_data_split(config_id: str, config_val):
-            _config_id, _budget_id = MFEIBO._get_config_id_split(config_id)
+            _config_id, _budget_id = IFBO._get_config_id_split(config_id)
             index = int(_config_id), int(_budget_id)
             _data = [
                 config_val.config,
@@ -480,14 +480,6 @@ class MFEIBO(BaseOptimizer):
                         # This is later padded accordingly for the Conv1D layer
                         lc = []
                     lcs.append(lc)
-
-                data = {"Acq Value": acq.values,
-                        "preds": self.acquisition.mu,
-                        "incumbents": self.acquisition.mu_star,
-                        "std": self.acquisition.std,
-                        "pred_learning_curves": lcs}
-                if self.acquisition_sampler.is_tabular:
-                    data["tabular_ids"] = tabular_ids
 
             # assigning config hyperparameters
             config = samples.loc[_config_id]
