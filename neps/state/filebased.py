@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import pprint
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -31,6 +32,7 @@ import numpy as np
 import portalocker as pl
 
 from neps.env import (
+    ENV_VARS_USED,
     GLOBAL_ERR_FILELOCK_POLL,
     GLOBAL_ERR_FILELOCK_TIMEOUT,
     SEED_SNAPSHOT_FILELOCK_POLL,
@@ -179,7 +181,7 @@ class TrialRepoInDirectory(TrialRepo[Path]):
             TrialRepo.TrialAlreadyExistsError: If the trial already exists in the
                 repository.
         """
-        config_path = self.directory / f"config_{trial.metadata.id}"
+        config_path = self.directory.absolute().resolve() / f"config_{trial.metadata.id}"
         if config_path.exists():
             raise TrialRepo.TrialAlreadyExistsError(
                 f"Trial '{trial.metadata.id}' already exists as '{config_path}'."
@@ -477,14 +479,25 @@ class FileLocker(Locker):
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
         self.lock_path.touch(exist_ok=True)
         logger.debug("Acquiring lock on %s", self.lock_path)
-        with pl.Lock(
-            self.lock_path,
-            check_interval=self.poll,
-            timeout=self.timeout,
-            flags=FILELOCK_EXCLUSIVE_NONE_BLOCKING,
-            fail_when_locked=fail_if_locked,
-        ):
-            yield
+        try:
+            with pl.Lock(
+                self.lock_path,
+                check_interval=self.poll,
+                timeout=self.timeout,
+                flags=FILELOCK_EXCLUSIVE_NONE_BLOCKING,
+                fail_when_locked=fail_if_locked,
+            ):
+                yield
+        except pl.exceptions.LockException as e:
+            raise pl.exceptions.LockException(
+                f"Failed to acquire lock after timeout of {self.timeout} seconds."
+                " This most likely indicates that another process has crashed while"
+                " holding the lock."
+                f"\n\nLock path: {self.lock_path}"
+                "\n\nIf you belive this is not the case, you can set some of these"
+                "environment variables to increase the timeout:"
+                f"\n\n{pprint.pformat(ENV_VARS_USED)}"
+            ) from e
         logger.debug("Released lock on %s", self.lock_path)
 
 
