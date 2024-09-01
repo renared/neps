@@ -18,6 +18,7 @@ def get_env(key: str, parse: Callable[[str], T], default: V) -> T | V:
         ENV_VARS_USED[key] = (e, value)
         return value
 
+    ENV_VARS_USED[key] = (default, default)
     return default
 
 
