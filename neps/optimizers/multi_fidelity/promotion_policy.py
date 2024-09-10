@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 
+from neps.isnan import isnan
+
 
 class PromotionPolicy(ABC):
     """Base class for implementing a sampling straregy for SH and its subclasses"""
@@ -65,7 +67,7 @@ class SyncPromotionPolicy(PromotionPolicy):
             total_rung_evals += len(self.rung_members[rung])
             if (
                 total_rung_evals >= self.config_map[rung]
-                and np.isnan(self.rung_members_performance[rung]).sum()
+                and isnan(self.rung_members_performance[rung]).sum()
             ):
                 # if rung is full but incomplete evaluations, pause on promotions, wait
                 return self.rung_promotions
@@ -74,7 +76,7 @@ class SyncPromotionPolicy(PromotionPolicy):
                 continue
             if (
                 total_rung_evals >= self.config_map[rung]
-                and np.isnan(self.rung_members_performance[rung]).sum() == 0
+                and isnan(self.rung_members_performance[rung]).sum() == 0
             ):
                 # if rung is full and no incomplete evaluations, find promotions
                 top_k = (self.config_map[rung] // self.eta) - (

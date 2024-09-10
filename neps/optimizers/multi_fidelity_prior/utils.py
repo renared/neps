@@ -13,6 +13,7 @@ from neps.search_spaces import (
     SearchSpace,
 )
 
+from neps.isnan import isnan
 
 def update_fidelity(config, fidelity):
     config.fidelity.set_value(fidelity)
@@ -153,7 +154,7 @@ def calc_total_resources_spent(observed_configs: pd.DataFrame, rung_map: dict) -
     rungs_used = [
         observed_configs.at[i, "rung"]
         for i in range(len(observed_configs))
-        if not np.isnan(observed_configs.at[i, "perf"])
+        if not isnan(observed_configs.at[i, "perf"])
     ]
     total_resources = sum(rung_map[r] for r in rungs_used)
     return total_resources
