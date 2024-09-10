@@ -5,5 +5,5 @@ def isnan(x):
     try:
         return np.isnan(x)
     except TypeError:
-        logging.warning(f"TypeError in isnan(), returning False. {traceback.format_exc()}")
-        return False
+        logging.warning(f"TypeError in isnan(), returning True array. {traceback.format_exc()}")
+        return np.full_like(x, fill_value=True)
